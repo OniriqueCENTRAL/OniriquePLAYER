@@ -9,8 +9,6 @@ using namespace juce;
 
 namespace
 {
-    const String cmdPrefix = "http://vcam.local/cmd?";
-
     // Calcule la taille de fenetre pour un ratio donne (le grand cote = longSide)
     void sizeForAspect (double ratio, int longSide, int& w, int& h)
     {
@@ -56,7 +54,19 @@ PlayerOniriqueEditor::PlayerOniriqueEditor (PlayerOniriqueProcessor& p)
 
     // 2) Creer la WebView (WebView2 sous Windows)
     using Opts = WebBrowserComponent::Options;
-    Opts options;
+
+    // Commandes de la page (ouvrir, sync, son, format de la video) par le canal de JUCE
+    SafePointer<PlayerOniriqueEditor> safe (this);
+    auto options = Opts{}
+                       .withNativeIntegrationEnabled()
+                       .withEventListener ("cmd", [safe] (const var& e)
+                       {
+                           const auto name = e["name"].toString(), value = e["v"].toString();
+                           MessageManager::callAsync ([safe, name, value]
+                           {
+                               if (safe != nullptr) safe->handleCommand (name, value);
+                           });
+                       });
 
    #if JUCE_WINDOWS
     options = options
@@ -66,7 +76,7 @@ PlayerOniriqueEditor::PlayerOniriqueEditor (PlayerOniriqueProcessor& p)
                                                .withBackgroundColour (Colour (0xff0d0809)));
    #endif
 
-    browser = std::make_unique<PlayerBrowser> (options);
+    browser = std::make_unique<PlayerBrowser> (options);   // le fichier glisse sur la fenetre passe encore par onNavigate
     browser->onNavigate = [this] (const String& url) { return handleNavigation (url); };
     browser->onLoaded   = [this] (const String& url)
     {
@@ -186,15 +196,25 @@ void PlayerOniriqueEditor::changeListenerCallback (ChangeBroadcaster*)
 //==============================================================================
 void PlayerOniriqueEditor::timerCallback()
 {
-    if (! pageReady || ! proc.getSettings().sync)
+    // Envoyee meme quand SYNC est eteint : c'est la page qui decide de la suivre ou non, il n'y a donc
+    // jamais de desaccord entre le bouton affiche et ce que fait le plugin.
+    if (! pageReady)
         return;
 
     // Si FL n'appelle plus le plugin (arret / smart disable), on considere que ca ne joue pas
-    const bool fresh   = (Time::getMillisecondCounter() - proc.lastProcessTick.load()) < 300;
+    const auto nowMs   = Time::getMillisecondCounter();
+    const bool fresh   = (nowMs - proc.lastProcessTick.load()) < 200;
     const bool playing = fresh && proc.hostPlaying.load();
+    const double t     = proc.hostTime.load();
 
-    runJS ("vcamHost(" + String (playing ? "true" : "false") + ","
-           + String (proc.hostTime.load(), 3) + ");");
+    // A l'arret et sans mouvement du curseur, un rappel toutes les 500 ms suffit
+    if (! playing && ! lastSentPlaying && std::abs (t - lastSentTime) < 0.0005 && nowMs - lastSentMs < 500)
+        return;
+
+    lastSentPlaying = playing;
+    lastSentTime = t;
+    lastSentMs = nowMs;
+    runJS ("vcamHost(" + String (playing ? "true" : "false") + "," + String (t, 3) + ");");
 }
 
 //==============================================================================
@@ -203,17 +223,6 @@ void PlayerOniriqueEditor::timerCallback()
 bool PlayerOniriqueEditor::handleNavigation (const String& url)
 {
     SafePointer<PlayerOniriqueEditor> safe (this);
-
-    // Commande de l'interface (ouvrir, sync, son, format de la video)
-    if (url.startsWithIgnoreCase (cmdPrefix))
-    {
-        const auto query = url.substring (cmdPrefix.length());
-        MessageManager::callAsync ([safe, query]
-        {
-            if (safe != nullptr) safe->handleCommand (query);
-        });
-        return false;   // on annule la navigation
-    }
 
     // Fichier .mp4 / .mov depose sur la fenetre (si FL laisse passer le glisser-deposer)
     if (url.startsWithIgnoreCase ("file:"))
@@ -233,18 +242,8 @@ bool PlayerOniriqueEditor::handleNavigation (const String& url)
     return true;
 }
 
-void PlayerOniriqueEditor::handleCommand (const String& query)
+void PlayerOniriqueEditor::handleCommand (const String& name, const String& value)
 {
-    String name, value;
-
-    for (auto& part : StringArray::fromTokens (query, "&", ""))
-    {
-        if (part.startsWith ("name="))
-            name = part.fromFirstOccurrenceOf ("=", false, false);
-        else if (part.startsWith ("v="))
-            value = part.fromFirstOccurrenceOf ("=", false, false);
-    }
-
     if (name == "open")
     {
         chooseVideo();

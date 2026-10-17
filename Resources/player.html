@@ -133,24 +133,23 @@
     mute:  '<svg viewBox="0 0 24 24"><path d="M4 9v6h4l5 4V5L8 9z"/><path style="fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round" d="M16 9l5 6M21 9l-5 6"/></svg>'
   };
 
-  let syncOn = true, hasVideo = false, lastHostT = -1, hideTimer = 0, dragging = false;
+  let syncOn = true, hasVideo = false, hideTimer = 0, dragging = false;
 
-  // ---- Envoi de commandes a la partie native (navigation interceptee puis annulee) ----
-  // File d'attente : une commande a la fois, pour qu'aucune ne soit ecrasee par la suivante.
-  const queue = [];
-  let busy = false;
-  function pump() {
-    if (busy || !queue.length) return;
-    busy = true;
-    window.location.href = queue.shift();
-    setTimeout(() => { busy = false; pump(); }, 60);
-  }
+  // ---- Envoi de commandes a la partie native (canal de JUCE : aucun message perdu, aucune navigation) ----
   function send(name, val) {
-    let u = 'http://vcam.local/cmd?name=' + name;
-    if (val !== undefined) u += '&v=' + val;
-    u += '&n=' + Date.now();
-    queue.push(u);
-    pump();
+    const backend = window.__JUCE__ && window.__JUCE__.backend;
+    if (backend) backend.emitEvent('cmd', { name: name, v: val === undefined ? '' : String(val) });
+  }
+
+  // Lecture de la video : un blocage du navigateur (son sans geste de l'utilisateur) se regle en coupant le son ;
+  // une lecture interrompue par une pause (AbortError) n'est pas une erreur.
+  function playVideo() {
+    v.play().catch(e => {
+      if (e && e.name === 'NotAllowedError' && !v.muted) {
+        v.muted = true; send('mute', 1); ui();
+        v.play().catch(() => {});
+      }
+    });
   }
 
   // ---- Interface ----
@@ -197,12 +196,11 @@
   $('open').addEventListener('click', () => send('open'));
 
   $('play').addEventListener('click', () => {
-    if (v.paused) v.play().catch(() => {}); else v.pause();
+    if (v.paused) playVideo(); else v.pause();
   });
 
   $('sync').addEventListener('click', () => {
     syncOn = !syncOn;
-    lastHostT = -1;
     if (syncOn) v.pause();
     send('sync', syncOn ? 1 : 0);
     ui();
@@ -243,59 +241,57 @@
   });
 
   // ---- Synchronisation avec le DAW ----
-  // Un saut dans la video prend du temps (decodage depuis l'image cle precedente). On mesure cette duree
-  // pour viser la position que le DAW aura atteinte a la fin du saut, sinon l'image repart en retard.
-  let seekLead = 0.08, seekStart = 0, seekWhilePlaying = false;
+  // Un saut dans la video coute cher (decodage depuis l'image cle precedente : parfois plusieurs centaines de ms sur
+  // une video de telephone ou d'internet), et des sauts enchaines figent l'image. On en fait donc le moins possible :
+  // un petit ecart se rattrape en changeant legerement la vitesse ; un gros ecart se regle par un seul saut, qui vise
+  // la position que le DAW aura atteinte a la fin du saut (duree mesuree sur cette video), jamais deux de suite.
+  const clamp = (x, a, b) => Math.min(b, Math.max(a, x));
+  let seekCost = 0.1, seekStart = 0, lastSeekEnd = 0;
   v.addEventListener('seeking', () => { seekStart = performance.now(); });
   v.addEventListener('seeked', () => {
-    if (seekWhilePlaying && seekStart) {
-      const took = (performance.now() - seekStart) / 1000;
-      seekLead = Math.min(0.8, Math.max(0.02, seekLead * 0.6 + took * 0.4));
-    }
-    seekWhilePlaying = false;
+    lastSeekEnd = performance.now();
+    seekCost = clamp(seekCost * 0.5 + (lastSeekEnd - seekStart) / 2000, 0.03, 1.5);
   });
 
-  function jump(t, playing) {
-    seekWhilePlaying = playing;
-    v.currentTime = Math.min(Math.max(0, playing ? t + seekLead : t), v.duration);
+  function seekTo(t, playing) {
+    v.currentTime = clamp(playing ? t + seekCost : t, 0, v.duration - 0.01);
   }
 
-  // Position du DAW (playing = bool, t = secondes), appelee ~16 fois par seconde par le plugin
+  // Position du DAW (playing = bool, t = secondes), envoyee par le plugin ~33 fois par seconde
   window.vcamHost = function (playing, t) {
     if (!syncOn || !hasVideo || !isFinite(v.duration)) return;
 
-    if (playing) {
-      if (t >= v.duration) { if (!v.paused) v.pause(); lastHostT = t; return; }   // la video est terminee
-
+    if (playing && t < v.duration) {
+      const d = t - v.currentTime;                    // > 0 : l'image est en retard sur le son
       if (v.paused) {
+        // reprise : pas de saut pour un petit ecart, la vitesse le rattrape
         v.playbackRate = 1;
-        if (Math.abs(v.currentTime - t) > 0.04) jump(t, true);
-        v.play().catch(() => { v.muted = true; send('mute', 1); ui(); });
-      } else if (!v.seeking) {
-        const d = t - v.currentTime;                  // > 0 : l'image est en retard sur le son
-        if (Math.abs(d) > 0.5) {
+        if (Math.abs(d) > 0.3 && !v.seeking) seekTo(t, true);
+        playVideo();
+      } else if (!v.seeking && v.readyState >= 3) {   // rien a corriger tant que la video charge
+        const sinceSeek = (performance.now() - lastSeekEnd) / 1000;
+        if (Math.abs(d) > Math.max(0.5, 3 * seekCost) && sinceSeek > 1) {
           v.playbackRate = 1;
-          jump(t, true);                              // saut du curseur ou grosse derive
-        } else if (Math.abs(d) > 0.025) {
-          // petite derive : on la rattrape en douceur (au plus 8 % plus vite ou plus lent), sans saut d'image
-          v.playbackRate = 1 + Math.max(-0.08, Math.min(0.08, d * 0.8));
+          seekTo(t, true);                            // curseur deplace, ou ecart trop grand pour la vitesse
+        } else if (Math.abs(d) > 0.02) {
+          v.playbackRate = 1 + clamp(d * 0.8, -0.25, 0.25);
         } else {
           v.playbackRate = 1;
         }
       }
     } else {
+      // DAW en pause ou arrete (ou au-dela de la fin de la video) : l'image s'arrete exactement a sa position
       if (!v.paused) v.pause();
       v.playbackRate = 1;
-      if (Math.abs(t - lastHostT) > 0.001) jump(t, false);
+      const still = Math.min(t, v.duration - 0.01);
+      if (!v.seeking && Math.abs(v.currentTime - still) > 0.03) seekTo(still, false);
     }
-    lastHostT = t;
   };
 
   // ---- Appels depuis la partie native ----
   window.vcamInit = function (s) {
     syncOn = !!s.sync;
     v.muted = !!s.muted;
-    lastHostT = -1;
     if (s.src) {
       if (v.dataset.src !== s.src) { v.dataset.src = s.src; v.src = s.src; v.load(); }
     } else {

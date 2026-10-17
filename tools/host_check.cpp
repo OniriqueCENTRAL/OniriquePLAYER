@@ -72,9 +72,11 @@ int main (int argc, char** argv)
     xml.setAttribute ("path", juce::File (juce::String::fromUTF8 (argv[2])).getFullPathName());
     xml.setAttribute ("sync", true);
     xml.setAttribute ("muted", true);
-    xml.setAttribute ("aspect", 16.0 / 9.0);
-    xml.setAttribute ("width", 640);
-    xml.setAttribute ("height", 360);
+    // Format carré exprès : la fenêtre ne reprend celui de la vidéo que si la page a pu le dire au plugin
+    // (vérifie le canal page -> plugin). Images attendues au format de la vidéo.
+    xml.setAttribute ("aspect", 1.0);
+    xml.setAttribute ("width", 480);
+    xml.setAttribute ("height", 480);
     // Comme un DAW : l'état du plugin, en base64, dans l'enveloppe VST3 de l'hôte JUCE
     juce::MemoryBlock inner, state;
     juce::AudioProcessor::copyXmlToBinary (xml, inner);

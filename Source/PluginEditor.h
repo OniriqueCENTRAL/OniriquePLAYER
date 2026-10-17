@@ -5,8 +5,8 @@
 #include "PluginProcessor.h"
 
 //==============================================================================
-//  WebBrowserComponent qui intercepte les "commandes" envoyees par la page
-//  (la page navigue vers http://vcam.local/cmd?... et on annule la navigation).
+//  WebBrowserComponent qui intercepte un fichier video glisse sur la fenetre
+//  (navigation vers le fichier, annulee) et signale la fin du chargement de la page.
 //==============================================================================
 class PlayerBrowser : public juce::WebBrowserComponent
 {
@@ -43,7 +43,7 @@ private:
     void changeListenerCallback (juce::ChangeBroadcaster*) override;
 
     bool handleNavigation (const juce::String& url);
-    void handleCommand (const juce::String& query);
+    void handleCommand (const juce::String& name, const juce::String& value);
     void chooseVideo();
     void setVideoFile (const juce::File&);
     void applyAspect (double ratio);     // adapte la fenetre au format de la video
@@ -58,6 +58,11 @@ private:
     juce::ComponentBoundsConstrainer constrainer;
     bool pageReady = false;
     bool sizeRestored = false;           // true une fois la taille initiale appliquee
+
+    // Derniere position envoyee a la page (pour ne pas la repeter quand le DAW est a l'arret)
+    bool lastSentPlaying = true;
+    double lastSentTime = -1.0;
+    juce::uint32 lastSentMs = 0;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (PlayerOniriqueEditor)
 };

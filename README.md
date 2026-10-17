@@ -13,13 +13,18 @@ la lecture du DAW. Charte ONIRIQUE (nuit / sang / braise, Unbounded, Grenze Goti
 Allumé (par défaut) : la vidéo suit le DAW, play, stop et curseur. Éteint : lecteur libre (lecture / pause, barre de
 position, boucle).
 
-- Petit décalage pendant la lecture : la vidéo accélère ou ralentit de quelques pour cent le temps de le rattraper,
-  sans saut d'image.
-- Curseur déplacé, ou décalage de plus d'une demi-seconde : saut direct. Le plugin mesure le temps que prend un saut
-  dans la vidéo et vise la position que le DAW aura atteinte à la fin du saut.
-- Mesuré dans le moteur de la fenêtre (même scénario : lecture, saut pendant la lecture, stop, curseur déplacé, relance),
-  sur trois vidéos : écart moyen image / DAW de 23 à 36 ms, contre 52 à 101 ms avant (l'ancienne version ne corrigeait
-  rien en dessous de 350 ms).
+- Le plugin envoie la position du DAW à la page en permanence (toutes les 30 ms en lecture, toutes les 500 ms à
+  l'arrêt) ; c'est la page qui décide de la suivre selon SYNC. Les commandes de la page (SYNC, son, ouvrir, format)
+  passent par le canal natif de JUCE.
+- Pause ou stop du DAW : l'image s'arrête exactement à sa position (moins de 15 ms d'écart mesuré).
+- Petit décalage pendant la lecture, ou à la reprise : la vidéo accélère ou ralentit le temps de le rattraper, sans
+  saut d'image.
+- Curseur déplacé, ou écart trop grand pour la vitesse : un seul saut, qui vise la position que le DAW aura atteinte à
+  la fin du saut (durée mesurée sur la vidéo). Jamais deux sauts d'affilée : des sauts enchaînés figent l'image sur
+  les vidéos lourdes (téléphone, internet).
+- Mesures dans le moteur de la fenêtre, avec 8 pauses et reprises rapprochées sur une vidéo d'internet de 29 s :
+  toutes les reprises se recalent (1 à 2 jamais recalées avant), écart en lecture de 59 à 62 ms au pire, 32 à 34 ms
+  en moyenne (avant : 77 à 165 ms au pire).
 - FL Studio : mettre le plugin sur le Master. Sur une piste muette, « Smart disable » arrête le plugin et la vidéo
   se met en pause : le désactiver pour ce plugin si besoin.
 
