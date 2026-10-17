@@ -1,0 +1,6 @@
+PLAYER ONIRIQUE : pause et reprise fiables
+
+- Pause ou stop dans le DAW : la vidéo s'arrête net, exactement à la position du DAW
+- Reprise sans gel d'image : la vidéo se recale en douceur au lieu d'enchaîner les sauts
+- Le bouton SYNC ne peut plus se désaccorder du plugin (la vidéo ne continue plus pendant une pause)
+- Couper ou remettre la lecture très vite ne coupe plus le son de la vidéo
