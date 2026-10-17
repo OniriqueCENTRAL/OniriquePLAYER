@@ -1,0 +1,311 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Player Onirique</title>
+<style>
+  /* Polices et logo : ecrits a cote de cette page par le plugin */
+  @font-face { font-family: Unbounded; src: url(fonts/Unbounded800.ttf); font-weight: 800; }
+  @font-face { font-family: Grenze; src: url(fonts/GrenzeGotisch600.ttf); font-weight: 600; }
+  @font-face { font-family: Hanken; src: url(fonts/HankenGrotesk600.ttf); font-weight: 600; }
+  @font-face { font-family: Mono; src: url(fonts/JetBrainsMono500.ttf); font-weight: 500; }
+
+  :root {
+    --night: #0D0809; --blood: #5C0008; --deep: #1A080A; --deep2: #2A0A0E;
+    --ember: #E23444; --ember-hot: #FF5A68; --mist: #F6EEEE; --haze: #A88F92; --bone: #FFECEE;
+    --line: rgba(255, 210, 214, .13);
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; width: 100%; height: 100%; overflow: hidden; background: var(--night); color: var(--mist);
+    font: 600 13px Hanken, "Segoe UI", system-ui, sans-serif;
+    -webkit-user-select: none; user-select: none;
+  }
+
+  /* La fenetre prend le format de la video : la video est affichee en entier, sans bandes */
+  video { position: fixed; inset: 0; width: 100%; height: 100%; object-fit: contain; background: #000; }
+
+  /* ---- Etat vide ---- */
+  #empty {
+    position: fixed; inset: 0; display: none; flex-direction: column; align-items: center; justify-content: center;
+    gap: 6px; padding: 24px; text-align: center; cursor: pointer;
+    background: radial-gradient(120% 90% at 50% 0%, rgba(92, 0, 8, .85), var(--deep) 55%, var(--night));
+  }
+  #empty::after {   /* grain argentique */
+    content: ""; position: absolute; inset: 0; pointer-events: none; opacity: .09; mix-blend-mode: overlay;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+  body.empty #empty { display: flex; }
+  body.empty video, body.empty #bar { display: none; }
+
+  #logo { width: min(120px, 26vmin); filter: drop-shadow(0 0 18px rgba(226, 52, 68, .45)); margin-bottom: 6px; }
+  .brand { font: 800 clamp(18px, 6vmin, 34px)/1 Unbounded, sans-serif; letter-spacing: .02em; color: var(--mist); }
+  .brand-sub { font: 600 clamp(20px, 7vmin, 38px)/1 Grenze, serif; color: var(--ember); margin-top: -2px;
+               text-shadow: 0 0 18px rgba(226, 52, 68, .5); }
+  .cta { margin-top: 18px; height: 40px; padding: 0 22px; border-radius: 12px; font-size: 12px; }
+  #msg { margin-top: 10px; color: var(--haze); font: 500 10px Mono, monospace; letter-spacing: .2em; text-transform: uppercase; }
+  .star { position: absolute; width: 14px; height: 14px; fill: var(--mist); opacity: .55;
+          filter: drop-shadow(0 0 6px var(--ember)); }
+
+  /* ---- Barre de controles : visible seulement quand la souris bouge ---- */
+  #bar {
+    position: fixed; left: 0; right: 0; bottom: 0; padding: 36px 12px 12px;
+    display: flex; align-items: center; gap: 8px;
+    background: linear-gradient(to top, rgba(13, 8, 9, .92), rgba(13, 8, 9, 0));
+    opacity: 0; pointer-events: none; transition: opacity .16s;
+  }
+  body.active #bar { opacity: 1; pointer-events: auto; }
+
+  button {
+    flex: none; height: 32px; min-width: 32px; padding: 0 10px; border-radius: 10px;
+    border: 1px solid var(--line); background: rgba(26, 8, 10, .88); color: var(--mist); cursor: pointer;
+    font: 500 11px Mono, monospace; letter-spacing: .18em; text-transform: uppercase;
+    display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+    transition: background .12s, border-color .12s, box-shadow .12s;
+  }
+  button:hover { background: rgba(42, 10, 14, .95); border-color: rgba(255, 210, 214, .28); }
+  button:focus-visible { outline: 2px solid var(--ember-hot); outline-offset: 2px; }
+  button svg { width: 16px; height: 16px; fill: currentColor; }
+  button.on, .cta {
+    background: linear-gradient(180deg, var(--ember), #8E0E1A); border-color: var(--ember-hot); color: var(--bone);
+    box-shadow: 0 0 14px rgba(226, 52, 68, .45), inset 0 1px 0 rgba(255, 255, 255, .18);
+  }
+  button.on:hover, .cta:hover { background: linear-gradient(180deg, var(--ember-hot), #A3121F); }
+
+  /* Pastille a LED du bouton SYNC */
+  .led { width: 7px; height: 7px; border-radius: 50%; background: #3a1a1e; box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .4); }
+  button.on .led { background: var(--bone); box-shadow: 0 0 6px var(--bone), 0 0 12px var(--ember-hot); }
+  body.sync #play { display: none; }
+
+  #time { flex: none; color: var(--haze); font: 500 11px Mono, monospace; letter-spacing: .06em; min-width: 82px; text-align: center; }
+
+  /* Barre de progression */
+  #seek {
+    -webkit-appearance: none; appearance: none; flex: 1; min-width: 40px; height: 4px; margin: 0 4px;
+    border-radius: 2px; outline: none; cursor: pointer; --p: 0%;
+    background: linear-gradient(to right, var(--blood), var(--ember) var(--p), rgba(255, 210, 214, .16) var(--p));
+  }
+  #seek::-webkit-slider-thumb { -webkit-appearance: none; width: 12px; height: 12px; border-radius: 50%;
+                                background: var(--bone); box-shadow: 0 0 8px var(--ember-hot); }
+  #seek:disabled { cursor: default; }
+  #seek:disabled::-webkit-slider-thumb { width: 0; height: 0; }
+
+  /* Fenetre etroite (video verticale) : on garde l'essentiel */
+  @media (max-width: 380px) { #time { display: none; } }
+  @media (max-width: 300px) { #sync { padding: 0 8px; letter-spacing: .08em; } #seek { min-width: 20px; } }
+</style>
+</head>
+<body class="empty">
+
+<video id="v" playsinline preload="auto" disablepictureinpicture muted></video>
+
+<div id="empty" role="button" tabindex="0" aria-label="Ouvrir une vidéo">
+  <svg class="star" style="top:14%;left:16%" viewBox="0 0 100 100"><path d="M50 0 56 44 100 50 56 56 50 100 44 56 0 50 44 44z"/></svg>
+  <svg class="star" style="top:24%;right:14%;width:9px;height:9px" viewBox="0 0 100 100"><path d="M50 0 56 44 100 50 56 56 50 100 44 56 0 50 44 44z"/></svg>
+  <svg class="star" style="bottom:16%;left:22%;width:8px;height:8px" viewBox="0 0 100 100"><path d="M50 0 56 44 100 50 56 56 50 100 44 56 0 50 44 44z"/></svg>
+  <img id="logo" src="logo.png" alt="">
+  <div class="brand">ONIRIQUE</div>
+  <div class="brand-sub">Player</div>
+  <button class="cta" tabindex="-1">Ouvrir une vidéo</button>
+  <div id="msg">Fichiers .mp4 ou .mov</div>
+</div>
+
+<div id="bar">
+  <button id="open" title="Ouvrir une vidéo"><svg viewBox="0 0 24 24"><path d="M3 6a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg></button>
+  <button id="play" title="Lecture / pause"></button>
+  <input id="seek" type="range" min="0" max="1000" value="0" step="1" aria-label="Position">
+  <span id="time">00:00 / 00:00</span>
+  <button id="sync" title="Suivre la lecture du DAW (play, stop, curseur)"><span class="led"></span>Sync</button>
+  <button id="mute" title="Son de la vidéo"></button>
+</div>
+
+<script>
+(function () {
+  'use strict';
+  const $ = id => document.getElementById(id);
+  const v = $('v'), seek = $('seek'), body = document.body;
+
+  const ICON = {
+    play:  '<svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>',
+    pause: '<svg viewBox="0 0 24 24"><path d="M6 5h4v14H6zM14 5h4v14h-4z"/></svg>',
+    vol:   '<svg viewBox="0 0 24 24"><path d="M4 9v6h4l5 4V5L8 9z"/><path style="fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round" d="M16 9a4 4 0 0 1 0 6M18.5 6.5a8 8 0 0 1 0 11"/></svg>',
+    mute:  '<svg viewBox="0 0 24 24"><path d="M4 9v6h4l5 4V5L8 9z"/><path style="fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round" d="M16 9l5 6M21 9l-5 6"/></svg>'
+  };
+
+  let syncOn = true, hasVideo = false, lastHostT = -1, hideTimer = 0, dragging = false;
+
+  // ---- Envoi de commandes a la partie native (navigation interceptee puis annulee) ----
+  // File d'attente : une commande a la fois, pour qu'aucune ne soit ecrasee par la suivante.
+  const queue = [];
+  let busy = false;
+  function pump() {
+    if (busy || !queue.length) return;
+    busy = true;
+    window.location.href = queue.shift();
+    setTimeout(() => { busy = false; pump(); }, 60);
+  }
+  function send(name, val) {
+    let u = 'http://vcam.local/cmd?name=' + name;
+    if (val !== undefined) u += '&v=' + val;
+    u += '&n=' + Date.now();
+    queue.push(u);
+    pump();
+  }
+
+  // ---- Interface ----
+  const clock = s => {
+    s = Math.max(0, Math.floor(s || 0));
+    const m = Math.floor(s / 60);
+    return (m < 10 ? '0' : '') + m + ':' + (s % 60 < 10 ? '0' : '') + (s % 60);
+  };
+
+  function ui() {
+    body.classList.toggle('empty', !hasVideo);
+    body.classList.toggle('sync', syncOn);
+    $('play').innerHTML = v.paused ? ICON.play : ICON.pause;
+    $('mute').innerHTML = v.muted ? ICON.mute : ICON.vol;
+    $('sync').classList.toggle('on', syncOn);
+    $('sync').setAttribute('aria-pressed', syncOn);
+    seek.disabled = syncOn;
+    v.loop = !syncOn;
+    if (!syncOn) v.playbackRate = 1;
+  }
+
+  function progress() {
+    if (!isFinite(v.duration) || v.duration <= 0) return;
+    $('time').textContent = clock(v.currentTime) + ' / ' + clock(v.duration);
+    if (dragging) return;
+    const r = Math.min(1, v.currentTime / v.duration);
+    seek.value = Math.round(r * 1000);
+    seek.style.setProperty('--p', (r * 100) + '%');
+  }
+
+  function poke() {
+    body.classList.add('active');
+    clearTimeout(hideTimer);
+    hideTimer = setTimeout(() => body.classList.remove('active'), 2200);
+  }
+  document.addEventListener('mousemove', poke);
+  document.addEventListener('mousedown', poke);
+  document.addEventListener('mouseleave', () => { clearTimeout(hideTimer); body.classList.remove('active'); });
+  document.addEventListener('contextmenu', e => e.preventDefault());
+
+  // ---- Boutons ----
+  $('empty').addEventListener('click', () => send('open'));
+  $('empty').addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') send('open'); });
+  $('open').addEventListener('click', () => send('open'));
+
+  $('play').addEventListener('click', () => {
+    if (v.paused) v.play().catch(() => {}); else v.pause();
+  });
+
+  $('sync').addEventListener('click', () => {
+    syncOn = !syncOn;
+    lastHostT = -1;
+    if (syncOn) v.pause();
+    send('sync', syncOn ? 1 : 0);
+    ui();
+  });
+
+  $('mute').addEventListener('click', () => {
+    v.muted = !v.muted;
+    send('mute', v.muted ? 1 : 0);
+    ui();
+  });
+
+  seek.addEventListener('input', () => {
+    if (syncOn || !isFinite(v.duration)) return;
+    dragging = true;
+    v.currentTime = (seek.value / 1000) * v.duration;
+    seek.style.setProperty('--p', (seek.value / 10) + '%');
+  });
+  seek.addEventListener('change', () => { dragging = false; });
+
+  ['play', 'pause', 'volumechange'].forEach(ev => v.addEventListener(ev, ui));
+  v.addEventListener('timeupdate', progress);
+
+  v.addEventListener('loadedmetadata', () => {
+    hasVideo = true;
+    $('msg').textContent = 'Fichiers .mp4 ou .mov';
+    ui();
+    progress();
+    // Indique le format de la video (4:3, 16:9, 9:16...) : la fenetre du plugin s'y adapte
+    if (v.videoWidth > 0 && v.videoHeight > 0) {
+      send('aspect', (v.videoWidth / v.videoHeight).toFixed(4));
+    }
+  });
+
+  v.addEventListener('error', () => {
+    hasVideo = false;
+    $('msg').textContent = 'Lecture impossible : utilise un .mp4 / .mov en H.264';
+    ui();
+  });
+
+  // ---- Synchronisation avec le DAW ----
+  // Un saut dans la video prend du temps (decodage depuis l'image cle precedente). On mesure cette duree
+  // pour viser la position que le DAW aura atteinte a la fin du saut, sinon l'image repart en retard.
+  let seekLead = 0.08, seekStart = 0, seekWhilePlaying = false;
+  v.addEventListener('seeking', () => { seekStart = performance.now(); });
+  v.addEventListener('seeked', () => {
+    if (seekWhilePlaying && seekStart) {
+      const took = (performance.now() - seekStart) / 1000;
+      seekLead = Math.min(0.8, Math.max(0.02, seekLead * 0.6 + took * 0.4));
+    }
+    seekWhilePlaying = false;
+  });
+
+  function jump(t, playing) {
+    seekWhilePlaying = playing;
+    v.currentTime = Math.min(Math.max(0, playing ? t + seekLead : t), v.duration);
+  }
+
+  // Position du DAW (playing = bool, t = secondes), appelee ~16 fois par seconde par le plugin
+  window.vcamHost = function (playing, t) {
+    if (!syncOn || !hasVideo || !isFinite(v.duration)) return;
+
+    if (playing) {
+      if (t >= v.duration) { if (!v.paused) v.pause(); lastHostT = t; return; }   // la video est terminee
+
+      if (v.paused) {
+        v.playbackRate = 1;
+        if (Math.abs(v.currentTime - t) > 0.04) jump(t, true);
+        v.play().catch(() => { v.muted = true; send('mute', 1); ui(); });
+      } else if (!v.seeking) {
+        const d = t - v.currentTime;                  // > 0 : l'image est en retard sur le son
+        if (Math.abs(d) > 0.5) {
+          v.playbackRate = 1;
+          jump(t, true);                              // saut du curseur ou grosse derive
+        } else if (Math.abs(d) > 0.025) {
+          // petite derive : on la rattrape en douceur (au plus 8 % plus vite ou plus lent), sans saut d'image
+          v.playbackRate = 1 + Math.max(-0.08, Math.min(0.08, d * 0.8));
+        } else {
+          v.playbackRate = 1;
+        }
+      }
+    } else {
+      if (!v.paused) v.pause();
+      v.playbackRate = 1;
+      if (Math.abs(t - lastHostT) > 0.001) jump(t, false);
+    }
+    lastHostT = t;
+  };
+
+  // ---- Appels depuis la partie native ----
+  window.vcamInit = function (s) {
+    syncOn = !!s.sync;
+    v.muted = !!s.muted;
+    lastHostT = -1;
+    if (s.src) {
+      if (v.dataset.src !== s.src) { v.dataset.src = s.src; v.src = s.src; v.load(); }
+    } else {
+      v.removeAttribute('src'); v.dataset.src = ''; v.load(); hasVideo = false;
+    }
+    ui();
+  };
+
+  ui();
+})();
+</script>
+</body>
+</html>
