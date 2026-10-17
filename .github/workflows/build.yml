@@ -7,6 +7,10 @@ on:
     branches: [main]
   workflow_dispatch:
 
+# Sans clé de publication, la dernière étape dépose la version sur une branche (voir plus bas)
+permissions:
+  contents: write
+
 env:
   TARGET: PlayerOnirique            # cible CMake
   PRODUCT: PLAYER ONIRIQUE          # PRODUCT_NAME du plugin
@@ -79,9 +83,17 @@ jobs:
           CLE: ${{ secrets.ONIRIQUE_PUBLISH_KEY }}
           MESSAGE: ${{ github.event.head_commit.message }}
         run: |
-          if [ -z "$CLE" ]; then echo "Secret ONIRIQUE_PUBLISH_KEY absent : rien n'est publié."; exit 0; fi
           # notes de version = message du commit, sans les lignes de signature ni [skip ci]
           printf '%s\n' "$MESSAGE" | grep -viE '^(co-authored-by|signed-off-by):' | sed -e 's/ *\[skip ci\]//' -e ':a' -e '/^[[:space:]]*$/{$d;N;ba' -e '}' | head -c 4000 > version/notes.txt
+          if [ -z "$CLE" ]; then
+            # Sans clé : la version (win/, mac/, notes.txt) est laissée sur la branche ci-version, à publier à la main
+            # depuis le serveur avec publish-plugin.mjs.
+            echo "Secret ONIRIQUE_PUBLISH_KEY absent : version déposée sur la branche ci-version."
+            cd version && git init -q && git config user.name build && git config user.email build@users.noreply.github.com
+            git checkout -q -b ci-version && git add -A && git commit -q -m "Version de ${GITHUB_SHA}"
+            git push -q --force "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}" HEAD:ci-version
+            exit 0
+          fi
           mkdir -p ~/.ssh
           printf '%s\n' "$CLE" > ~/.ssh/publish && chmod 600 ~/.ssh/publish
           # clé du serveur épinglée (SHA256:s17azxD9lgapSvGarqB34msuvdMJLWvFV7ptd79FZsc)
