@@ -2,3 +2,4 @@ build/
 dist/
 *.zip
 *.vst3/
+publication/
