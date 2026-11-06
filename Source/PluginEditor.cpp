@@ -126,6 +126,8 @@ PlayerOniriqueEditor::~PlayerOniriqueEditor()
 
 void PlayerOniriqueEditor::resized()
 {
+    if (themeButton.getParentComponent() == nullptr) addAndMakeVisible (themeButton);
+    themeButton.setBounds (getWidth() - 50, 12, 38, 26);
     if (browser != nullptr)
         browser->setBounds (getLocalBounds());
 
@@ -196,6 +198,12 @@ void PlayerOniriqueEditor::changeListenerCallback (ChangeBroadcaster*)
 //==============================================================================
 void PlayerOniriqueEditor::timerCallback()
 {
+    // la couleur de l'interface (menu ⋯, ou changée dans un autre plugin ONIRIQUE) : tout se redessine
+    if (onirique::look::changedSince (themeSeen))
+    {
+        std::function<void (juce::Component&)> all = [&all] (juce::Component& k) { k.repaint(); for (auto* ch : k.getChildren()) all (*ch); };
+        all (*this);
+    }
     // Envoyee meme quand SYNC est eteint : c'est la page qui decide de la suivre ou non, il n'y a donc
     // jamais de desaccord entre le bouton affiche et ce que fait le plugin.
     if (! pageReady)

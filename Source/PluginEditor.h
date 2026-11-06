@@ -1,6 +1,7 @@
 #pragma once
 
 #include <juce_audio_processors/juce_audio_processors.h>
+#include "../License/OniriqueThemeButton.h"
 #include <juce_gui_extra/juce_gui_extra.h>
 #include "PluginProcessor.h"
 
@@ -63,6 +64,10 @@ private:
     bool lastSentPlaying = true;
     double lastSentTime = -1.0;
     juce::uint32 lastSentMs = 0;
+
+    onirique::look::ThemeButton themeButton;   // ⋯ : la couleur de l'interface
+
+    int themeSeen = -1;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (PlayerOniriqueEditor)
 };
